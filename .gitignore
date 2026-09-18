@@ -1,0 +1,12 @@
+# dependencies installed while running the regression tests
+node_modules/
+package-lock.json
+
+# packaged artifacts
+*.zip
+dist/
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini

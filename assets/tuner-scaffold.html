@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设计调参稿 · 清单驱动版</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    display:flex;background:#eceef2;color:#12141a;overflow:hidden;
+  }
+
+  /* ================= 左：画布 ================= */
+  .canvas{
+    flex:1;display:flex;align-items:flex-start;justify-content:center;
+    padding:32px 24px 56px;overflow:auto;
+  }
+
+  .mock{
+    container-type:inline-size;
+    position:relative;
+    width:min(100%, var(--mock-w));
+    flex:none;
+    background:var(--bg);
+    border-radius:calc(var(--radius) * 1.1);
+    padding:var(--card-pad);
+    box-shadow:0 1px 2px rgba(0,0,0,.06),0 10px 30px rgba(0,0,0,.07);
+    /* 只过渡 background —— width 绝不能加过渡。这是个以测量/导出数值为核心的工具：
+       一旦 width 参与过渡，改值后 getBoundingClientRect 会停在旧值约 150ms，
+       标注模式就会按过渡中的中间尺寸测量，量出错误间距；且松手后不会自愈。 */
+    transition:background .15s ease;
+
+    --bg:#ffffff;--surface:#f5f6f8;--line:#e6e8ec;
+    --text:#12141a;--muted:#6b7280;
+    --accent:#2f6fed;--radius:16px;--space:16px;--card-pad:20px;
+    --title-size:26px;--body-size:14px;--cover-h:158px;--mock-w:390px;
+  }
+  .mock.dark{
+    --bg:#15171d;--surface:#1d2029;--line:#2a2e39;
+    --text:#f0f2f5;--muted:#98a0ad;
+    box-shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.4);
+  }
+
+  /* 窄容器单列，宽容器两列（容器查询按 mock 自身宽度，不受窗口大小影响） */
+  .layout{display:flex;flex-direction:column;gap:var(--space)}
+  @container (min-width: 700px){
+    .layout{flex-direction:row;align-items:flex-start}
+    .layout > .cover{flex:1 1 46%;position:sticky;top:0}
+    .layout > .body{flex:1 1 54%}
+  }
+  .body{display:flex;flex-direction:column;gap:var(--space);min-width:0}
+
+  .navbar{display:flex;align-items:center;gap:calc(var(--space)*.6)}
+  .back{width:26px;height:26px;flex:none;border:1px solid var(--line);border-radius:8px;position:relative}
+  .back::after{content:"";position:absolute;left:10px;top:8px;width:6px;height:6px;
+    border-left:1.6px solid var(--text);border-bottom:1.6px solid var(--text);transform:rotate(45deg)}
+  .navbar .t{font-size:15px;font-weight:500;color:var(--text)}
+  .navbar .dot{margin-left:auto;width:22px;height:22px;border:1px solid var(--line);border-radius:50%;position:relative}
+  .navbar .dot::after{content:"";position:absolute;inset:7px;border-radius:50%;background:var(--muted);opacity:.55}
+
+  .cover{
+    height:var(--cover-h);border-radius:calc(var(--radius)*.7);
+    background:var(--accent);position:relative;overflow:hidden;flex:none;
+  }
+  .cover::before{content:"";position:absolute;right:-26px;top:-26px;width:104px;height:104px;
+    border-radius:50%;background:#fff;opacity:.16}
+  .cover::after{content:"";position:absolute;left:14px;bottom:12px;
+    width:52px;height:6px;border-radius:3px;background:#fff;opacity:.75}
+
+  .title{font-size:var(--title-size);line-height:1.28;font-weight:500;color:var(--text);
+    margin:0;letter-spacing:-.01em}
+  .sub{font-size:var(--body-size);line-height:1.65;color:var(--muted);margin:0}
+
+  .chips{display:flex;flex-wrap:wrap;gap:calc(var(--space)*.5)}
+  .chip{font-size:calc(var(--body-size) - 1px);line-height:1.5;padding:4px 10px;border-radius:999px;
+    background:var(--surface);color:var(--muted);border:1px solid var(--line)}
+  .chip.on{background:var(--accent);color:#fff;border-color:transparent}
+
+  .infolist{display:flex;flex-direction:column;gap:calc(var(--space)*.75)}
+  .row{display:flex;align-items:baseline;gap:10px;font-size:var(--body-size);line-height:1.6}
+  .row .k{color:var(--muted);width:52px;flex:none}
+  .row .v{color:var(--text)}
+
+  .cta{width:100%;height:calc(44px + var(--space)*.2);border:0;cursor:pointer;
+    border-radius:calc(var(--radius)*.6);background:var(--accent);color:#fff;
+    font-size:calc(var(--body-size) + 1px);font-weight:500;font-family:inherit}
+  .cta:active{opacity:.86}
+
+  /* ================= 标注模式 ================= */
+  .annot{outline:1px dashed #d4537e;outline-offset:-1px}
+  .badge{
+    position:absolute;z-index:9;font-size:11px;line-height:1;padding:2px 5px;border-radius:4px;
+    background:#d4537e;color:#fff;font-variant-numeric:tabular-nums;pointer-events:none;white-space:nowrap;
+  }
+  .badge.v{transform:translateY(-50%)}
+  .badge.h{transform:translateX(-50%)}
+
+  /* ================= 右：面板 ================= */
+  .panel{width:322px;flex:none;background:#fff;border-left:1px solid #e0e2e8;
+    padding:22px 20px 32px;overflow:auto}
+  .panel h1{font-size:15px;font-weight:500;margin:0 0 4px}
+  .panel .hint{font-size:12px;color:#8b909c;line-height:1.6;margin:0 0 18px}
+  .grp{margin-bottom:18px}
+  .grp > .gt{font-size:11.5px;letter-spacing:.04em;color:#9aa0ac;margin:0 0 10px}
+  .field{margin-bottom:14px}
+  .field label{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:13px;color:#3f444e;margin-bottom:6px}
+  .field label b{font-weight:500;color:#12141a;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:#2f6fed;height:18px}
+  input[type=color]{width:100%;height:32px;border:1px solid #dfe1e7;border-radius:8px;
+    background:#fff;padding:3px;cursor:pointer}
+  .seg{display:flex;gap:6px;flex-wrap:wrap}
+  .seg button{flex:1;min-width:56px;height:30px;border:1px solid #dfe1e7;background:#fff;
+    border-radius:8px;font-family:inherit;font-size:12.5px;color:#3f444e;cursor:pointer}
+  .seg button.on{background:#12141a;color:#fff;border-color:#12141a}
+  .toggle{display:flex;align-items:center;gap:9px;font-size:13px;color:#3f444e;cursor:pointer}
+  .toggle input{width:16px;height:16px;accent-color:#2f6fed}
+  hr{border:0;border-top:1px solid #eceef2;margin:18px 0}
+  .btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .btns button{height:34px;border-radius:8px;border:1px solid #dfe1e7;background:#fff;
+    font-family:inherit;font-size:13px;color:#12141a;cursor:pointer}
+  .btns button.primary{background:#2f6fed;border-color:#2f6fed;color:#fff}
+  .out{width:100%;height:132px;margin-top:10px;border:1px solid #dfe1e7;border-radius:8px;
+    padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
+    line-height:1.6;color:#2c2c2a;background:#fafbfc;resize:vertical}
+  .warn{margin-top:10px;font-size:12px;line-height:1.55;padding:9px 11px;border-radius:8px;display:none}
+  .warn.show{display:block}
+  .warn.bad{background:#FCEBEB;color:#791F1F;border:1px solid #F7C1C1}
+  .warn.ok{background:#EAF3DE;color:#27500A;border:1px solid #C0DD97}
+</style>
+</head>
+<body>
+
+<div class="canvas">
+  <div class="mock" id="mock">
+    <div class="layout">
+
+      <div class="cover"></div>
+
+      <div class="body">
+        <div class="navbar">
+          <div class="back"></div>
+          <div class="t">活动详情</div>
+          <div class="dot"></div>
+        </div>
+
+        <div class="body" style="gap:calc(var(--space)*.55)">
+          <p class="title">城市夜跑·第九期</p>
+          <p class="sub">沿江 5 公里轻松配速，结束后有热饮和拉伸。适合第一次参加的朋友。</p>
+        </div>
+
+        <div class="chips">
+          <span class="chip on">新手友好</span>
+          <span class="chip">5 公里</span>
+          <span class="chip">夜间</span>
+          <span class="chip">免费</span>
+        </div>
+
+        <div class="infolist">
+          <div class="row"><span class="k">时间</span><span class="v">9 月 20 日 19:30</span></div>
+          <div class="row"><span class="k">集合</span><span class="v">滨江公园 3 号门</span></div>
+          <div class="row"><span class="k">人数</span><span class="v">已报名 18 / 30</span></div>
+        </div>
+
+        <button class="cta">立即报名</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<aside class="panel">
+  <h1>设计调参</h1>
+  <p class="hint">拖动即时生效。数值就是你最终会拿到的 CSS 值 —— 调完点「导出参数」或「复制 CSS」交给我。</p>
+
+  <div id="controls"></div>
+
+  <hr>
+
+  <div class="field">
+    <label class="toggle"><input type="checkbox" id="annot"> 标注模式（量间距 / 内边距 / 画布宽）</label>
+  </div>
+
+  <div class="btns">
+    <button class="primary" id="btn-export">导出参数</button>
+    <button id="btn-css">复制 CSS</button>
+    <button id="btn-link">复制链接</button>
+    <button id="btn-reset">重置</button>
+  </div>
+
+  <textarea class="out" id="out" readonly placeholder="点上面的按钮，结果会出现在这里。"></textarea>
+  <div class="warn" id="warn"></div>
+</aside>
+
+<script>
+/* =====================================================================
+   参数清单 —— 加一个参数只需要在这里写一行，控件自动生成
+   css: 写到 mock 根上的 CSS 自定义属性名；type:'seg' 时可为 null
+   ===================================================================== */
+const MANIFEST = [
+  {group:'颜色', key:'accent',    css:'--accent',     label:'主色',       type:'color', def:'#2f6fed'},
+  {group:'颜色', key:'theme',     css:null,           label:'底色',       type:'seg',   def:'light',
+   options:[{v:'light',t:'浅色'},{v:'dark',t:'深色'}]},
+
+  {group:'形状', key:'radius',    css:'--radius',     label:'圆角',       type:'range',
+   min:0, max:28, step:1, unit:'px', def:16},
+
+  {group:'间距', key:'space',     css:'--space',      label:'组件间距',   type:'range',
+   min:4, max:36, step:1, unit:'px', def:16},
+  {group:'间距', key:'cardPad',   css:'--card-pad',   label:'卡片内边距', type:'range',
+   min:8, max:44, step:1, unit:'px', def:20},
+
+  {group:'字体', key:'titleSize', css:'--title-size', label:'标题字号',   type:'range',
+   min:18, max:40, step:1, unit:'px', def:26},
+  {group:'字体', key:'bodySize',  css:'--body-size',  label:'正文字号',   type:'range',
+   min:11, max:18, step:1, unit:'px', def:14},
+
+  {group:'布局', key:'coverH',    css:'--cover-h',    label:'封面高度',   type:'range',
+   min:80, max:280, step:4, unit:'px', def:158},
+  {group:'布局', key:'mockW',     css:'--mock-w',     label:'画布宽度',   type:'range',
+   min:320, max:1200, step:10, unit:'px', def:390,
+   presets:[{v:390,t:'手机'},{v:768,t:'平板'},{v:1100,t:'桌面'}]}
+];
+
+const STORE = 'design-tuner-v2';
+const mock  = document.getElementById('mock');
+const out   = document.getElementById('out');
+const warn  = document.getElementById('warn');
+
+const DEFAULTS = Object.fromEntries(MANIFEST.map(p => [p.key, p.def]));
+let state = { ...DEFAULTS };
+
+/* ---------- 初始值：URL hash 优先，其次 localStorage ---------- */
+function loadState(){
+  try{
+    if(location.hash.startsWith('#p=')){
+      const parsed = JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(3)))));
+      return { ...DEFAULTS, ...parsed };
+    }
+  }catch(e){}
+  try{
+    const raw = localStorage.getItem(STORE);
+    if(raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+  }catch(e){}
+  return { ...DEFAULTS };
+}
+
+/* ---------- 按清单生成控件 ---------- */
+function buildControls(){
+  const host = document.getElementById('controls');
+  const groups = [...new Set(MANIFEST.map(p => p.group))];
+
+  groups.forEach(g => {
+    const wrap = document.createElement('div');
+    wrap.className = 'grp';
+    wrap.innerHTML = `<p class="gt">${g}</p>`;
+
+    MANIFEST.filter(p => p.group === g).forEach(p => {
+      const f = document.createElement('div');
+      f.className = 'field';
+
+      if(p.type === 'range'){
+        f.innerHTML =
+          `<label>${p.label} <b id="v-${p.key}"></b></label>` +
+          `<input type="range" id="i-${p.key}" min="${p.min}" max="${p.max}" ` +
+          `step="${p.step}" value="${state[p.key]}">` +
+          (p.presets
+            ? `<div class="seg" id="preset-${p.key}" style="margin-top:7px">` +
+              p.presets.map(ps => `<button data-v="${ps.v}">${ps.t} ${ps.v}</button>`).join('') +
+              `</div>`
+            : '');
+      } else if(p.type === 'color'){
+        f.innerHTML =
+          `<label>${p.label} <b id="v-${p.key}"></b></label>` +
+          `<input type="color" id="i-${p.key}" value="${state[p.key]}">`;
+      } else if(p.type === 'seg'){
+        f.innerHTML =
+          `<label>${p.label}</label><div class="seg" id="i-${p.key}">` +
+          p.options.map(o => `<button data-v="${o.v}">${o.t}</button>`).join('') +
+          `</div>`;
+      }
+      wrap.appendChild(f);
+    });
+
+    host.appendChild(wrap);
+  });
+
+  MANIFEST.forEach(p => {
+    if(p.type === 'range' || p.type === 'color'){
+      const el = document.getElementById('i-' + p.key);
+      el.addEventListener('input', () => {
+        state[p.key] = (p.type === 'range') ? +el.value : el.value;
+        apply();
+      });
+    } else if(p.type === 'seg'){
+      document.querySelectorAll(`#i-${p.key} button`).forEach(b => {
+        b.addEventListener('click', () => { state[p.key] = b.dataset.v; apply(); });
+      });
+    }
+    if(p.presets){
+      document.querySelectorAll(`#preset-${p.key} button`).forEach(b => {
+        b.addEventListener('click', () => {
+          state[p.key] = +b.dataset.v;
+          document.getElementById('i-' + p.key).value = state[p.key];
+          apply();
+        });
+      });
+    }
+  });
+}
+
+/* ---------- 应用 state ---------- */
+function apply(){
+  MANIFEST.forEach(p => {
+    if(p.css){
+      mock.style.setProperty(p.css, (p.type === 'range') ? state[p.key] + 'px' : state[p.key]);
+    }
+    const readout = document.getElementById('v-' + p.key);
+    if(readout){
+      readout.textContent = (p.type === 'range') ? state[p.key] + (p.unit || '') : state[p.key];
+    }
+    if(p.type === 'seg'){
+      document.querySelectorAll(`#i-${p.key} button`).forEach(b =>
+        b.classList.toggle('on', b.dataset.v === state[p.key]));
+    }
+    if(p.presets){
+      document.querySelectorAll(`#preset-${p.key} button`).forEach(b =>
+        b.classList.toggle('on', +b.dataset.v === state[p.key]));
+    }
+  });
+
+  mock.classList.toggle('dark', state.theme === 'dark');
+  checkContrast();
+
+  try{ localStorage.setItem(STORE, JSON.stringify(state)); }catch(e){}
+  if(document.getElementById('annot').checked) drawAnnot(); else clearAnnot();
+}
+
+/* ---------- 对比度校验：主色配白字够不够看 ---------- */
+function srgbLum(hex){
+  const c = hex.replace('#','');
+  const rgb = [0,2,4].map(i => parseInt(c.slice(i,i+2),16) / 255)
+    .map(v => v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4));
+  return 0.2126*rgb[0] + 0.7152*rgb[1] + 0.0722*rgb[2];
+}
+function ratio(a,b){
+  const l1 = srgbLum(a), l2 = srgbLum(b);
+  const hi = Math.max(l1,l2), lo = Math.min(l1,l2);
+  return (hi + 0.05) / (lo + 0.05);
+}
+function checkContrast(){
+  const r = ratio(state.accent, '#ffffff');
+  if(r < 3){
+    warn.className = 'warn show bad';
+    warn.textContent = '主色配白字对比度只有 ' + r.toFixed(2) +
+      ':1，低于 3:1 —— 按钮上的白字会看不清。建议把主色调深，或把按钮文字换成深色。';
+  } else if(r < 4.5){
+    warn.className = 'warn show bad';
+    warn.textContent = '对比度 ' + r.toFixed(2) +
+      ':1，达不到正文级 4.5:1。大号按钮文字勉强可用，但正文别用这个色配白字。';
+  } else {
+    warn.className = 'warn show ok';
+    warn.textContent = '对比度 ' + r.toFixed(2) + ':1，通过 AA 正文标准。';
+  }
+}
+
+/* ---------- 标注：纵/横间距 + 内边距 + 画布宽 ---------- */
+function clearAnnot(){
+  mock.querySelectorAll('.annot').forEach(e => e.classList.remove('annot'));
+  mock.querySelectorAll('.badge').forEach(e => e.remove());
+}
+function addBadge(text, cls, style){
+  const d = document.createElement('div');
+  d.className = 'badge ' + cls;
+  d.textContent = text;
+  Object.assign(d.style, style);
+  mock.appendChild(d);
+}
+function drawAnnot(){
+  clearAnnot();
+  mock.querySelectorAll('*').forEach(e => e.classList.add('annot'));
+
+  const pr = mock.getBoundingClientRect();
+  const groups = [...mock.querySelectorAll('.layout, .body, .navbar, .chips, .infolist')];
+
+  groups.forEach(group => {
+    const dir = getComputedStyle(group).flexDirection;
+    const kids = [...group.children];
+    for(let i = 0; i < kids.length - 1; i++){
+      const a = kids[i].getBoundingClientRect();
+      const b = kids[i+1].getBoundingClientRect();
+      if(dir.indexOf('row') === 0){
+        const gap = Math.round(b.left - a.right);
+        if(gap <= 0) continue;
+        addBadge('↔ ' + gap, 'h', {
+          left: (a.right - pr.left + gap/2) + 'px',
+          top:  (a.top - pr.top + a.height/2) + 'px'
+        });
+      } else {
+        const gap = Math.round(b.top - a.bottom);
+        if(gap <= 0) continue;
+        addBadge('↕ ' + gap, 'v', {
+          left: '5px',
+          top:  (a.bottom - pr.top + gap/2) + 'px'
+        });
+      }
+    }
+  });
+
+  const pad = Math.round(parseFloat(getComputedStyle(mock).paddingLeft));
+  addBadge('padding ' + pad, 'v', { left: '5px', top: '7px' });
+  addBadge('宽 ' + Math.round(pr.width), 'v', { right: '5px', top: '7px', left: 'auto' });
+}
+document.getElementById('annot').addEventListener('change', apply);
+window.addEventListener('resize', () => {
+  if(document.getElementById('annot').checked) drawAnnot();
+});
+
+/* ---------- 导出 ---------- */
+document.getElementById('btn-export').addEventListener('click', () => {
+  out.value = JSON.stringify(state, null, 2);
+  out.select();
+});
+
+document.getElementById('btn-css').addEventListener('click', () => {
+  const lines = MANIFEST
+    .filter(p => p.css)
+    .map(p => '  ' + p.css + ': ' + (p.type === 'range' ? state[p.key] + 'px' : state[p.key]) + ';');
+  out.value = ':root {\n' + lines.join('\n') + '\n}';
+  out.select();
+});
+
+document.getElementById('btn-link').addEventListener('click', () => {
+  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(state))));
+  out.value = location.origin + location.pathname + '#p=' + b64;
+  out.select();
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  state = { ...DEFAULTS };
+  MANIFEST.forEach(p => {
+    if(p.type === 'range' || p.type === 'color'){
+      const el = document.getElementById('i-' + p.key);
+      if(el) el.value = state[p.key];
+    }
+  });
+  document.getElementById('annot').checked = false;
+  if(history.replaceState) history.replaceState(null, '', location.pathname);
+  apply();
+  /* 注意顺序：apply() 内部会写 localStorage，所以清理必须放在它之后 */
+  try{ localStorage.removeItem(STORE); }catch(e){}
+});
+
+/* ---------- 启动 ---------- */
+state = loadState();
+buildControls();
+apply();
+</script>
+</body>
+</html>

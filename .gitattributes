@@ -1,0 +1,7 @@
+# 统一按 LF 存储，避免 Windows 的 autocrlf 把 CRLF 带进仓库。
+# 对 scripts/browser_verify.py 尤其重要：shebang 行带 \r 会让它在 Linux/macOS 上无法直接执行。
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.zip binary
